@@ -213,8 +213,11 @@ def show_mean_frame(
 def show_three_median_planes(
     volume: np.ndarray,
     *,
-    title: str | None = None,
+    voxel_spacing: tuple[float, float, float] | None = None,
     cmap: str = "hot",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    title: str | None = None,
 ) -> Figure:
     """Show the three median planes (axial / coronal / sagittal) side-by-side.
 
@@ -222,14 +225,97 @@ def show_three_median_planes(
     ----------
     volume : np.ndarray
         3-D array of shape ``(Z, Y, X)``.
-    title : str | None, default ``None``
-        Optional suptitle for the figure.
-    cmap : str, default ``"hot"``
-        Colormap.  Use ``"gray"`` for MR.
+    voxel_spacing : tuple[float, float, float] | None
+        ``(z_mm, y_mm, x_mm)``.  When provided, the coronal and sagittal
+        panels are rendered with the correct physical aspect ratio
+        (otherwise they look horizontally squashed for the FORISI
+        anisotropy of 3.27 vs 1.17 mm).
+    cmap, vmin, vmax, title
+        Standard matplotlib options.
 
     Returns
     -------
     Figure
-        A 1×3 figure with axial, coronal, sagittal panels.
     """
-    raise NotImplementedError
+    z, y, x = volume.shape
+    fig, axes = plt.subplots(
+        1, 3, figsize=(11, 4.2), dpi=FIGURE_DPI, constrained_layout=True
+    )
+    labels = ("Axial (z = Z/2)", "Coronal (y = Y/2)", "Sagittal (x = X/2)")
+    indices = (z // 2, y // 2, x // 2)
+
+    for ax, axis_idx, index, label in zip(axes, (0, 1, 2), indices, labels):
+        ax.imshow(
+            _take_slice(volume, axis_idx, index),
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            aspect=_aspect_for_plane(axis_idx, voxel_spacing) if voxel_spacing else 1.0,
+            interpolation="nearest",
+        )
+        ax.set_title(label, fontsize=10)
+        ax.set_axis_off()
+
+    if title:
+        fig.suptitle(title, fontsize=12)
+    return fig
+
+
+def overlay_mask(
+    image: np.ndarray,
+    mask: np.ndarray,
+    *,
+    alpha: float = 0.4,
+    mask_color: tuple[float, float, float] = (1.0, 0.2, 0.2),
+    title: str | None = None,
+    ax: Axes | None = None,
+    aspect: float | str = 1.0,
+) -> Figure:
+    """Show a 2-D anatomical image with a binary mask alpha-composited on top.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Background grayscale image of shape ``(Y, X)``.
+    mask : np.ndarray
+        Binary mask, same shape as ``image``.  Truthy voxels are overlaid.
+    alpha : float, default 0.4
+        Mask opacity (``0`` = invisible, ``1`` = opaque).
+    mask_color : tuple[float, float, float], default ``(1.0, 0.2, 0.2)``
+        RGB color of the mask overlay (0-1 range).
+    title : str | None
+        Optional axes title.
+    ax : Axes | None
+        If provided, draw into this axes (no new figure created).
+    aspect : float | str, default 1.0
+        Pass-through to ``imshow``.
+
+    Returns
+    -------
+    Figure
+        The matplotlib Figure (the parent of ``ax`` when ``ax`` is given).
+    """
+    if image.shape != mask.shape:
+        raise ValueError(
+            f"image shape {image.shape} != mask shape {mask.shape}"
+        )
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5, 5), dpi=FIGURE_DPI, constrained_layout=True)
+    else:
+        fig = ax.figure
+
+    ax.imshow(image, cmap="gray", aspect=aspect, interpolation="nearest")
+
+    # Build an RGBA overlay where alpha is 0 outside the mask.
+    rgba = np.zeros((*mask.shape, 4), dtype=np.float32)
+    rgba[..., 0] = mask_color[0]
+    rgba[..., 1] = mask_color[1]
+    rgba[..., 2] = mask_color[2]
+    rgba[..., 3] = mask.astype(bool).astype(np.float32) * alpha
+    ax.imshow(rgba, aspect=aspect, interpolation="nearest")
+
+    ax.set_axis_off()
+    if title:
+        ax.set_title(title, fontsize=10)
+    return fig
