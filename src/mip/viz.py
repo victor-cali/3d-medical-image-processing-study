@@ -190,13 +190,24 @@ def show_mean_frame(
     axis: int = 0,
     n_cols: int = 8,
     cmap: str = "hot",
-    ax: Axes | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    title: str | None = "PET — mean of frames",
 ) -> Figure:
-    """Render every slice of the mean-of-frames PET volume as a mosaic.
+    """Render every slice of the time-averaged PET volume as a mosaic.
 
-    Parameters mirror :func:`show_last_frame`; uses ``study.mean_volume``.
+    Same parameters as :func:`show_last_frame`; uses ``study.mean_volume``.
     """
-    raise NotImplementedError
+    return _mosaic(
+        study.mean_volume,
+        axis=axis,
+        n_cols=n_cols,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        voxel_spacing=study.voxel_spacing,
+        title=title,
+    )
 
 
 def show_three_median_planes(
