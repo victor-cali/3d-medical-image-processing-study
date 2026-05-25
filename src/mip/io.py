@@ -17,6 +17,7 @@ reconstruction job here is to:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pydicom
@@ -104,3 +105,66 @@ class MRVolume:
     voxel_spacing: tuple[float, float, float]
     affine: np.ndarray
     raw_headers: pydicom.Dataset = field(repr=False, compare=False)
+
+
+def load_dynamic_pet(path: Path | str) -> PETStudy:
+    """Load a dynamic PET multi-frame DICOM and reshape it to ``(T, Z, Y, X)``.
+
+    Parameters
+    ----------
+    path : Path | str
+        Filesystem path to the enhanced multi-frame DICOM file
+        (single file, not a directory).
+
+    Returns
+    -------
+    PETStudy
+        Fully assembled dataclass — see :class:`PETStudy` for the contract.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``path`` does not exist.
+    ValueError
+        If the slice count is not divisible by the number of unique slice
+        positions (i.e. the ``(T·Z, Y, X) → (T, Z, Y, X)`` reshape would lose
+        data), or if any of the required private tags are missing.
+
+    Notes
+    -----
+    Required DICOM tags
+    ~~~~~~~~~~~~~~~~~~~
+    * ``(0028, 0008) NumberOfFrames``
+    * ``(0028, 0010) Rows``, ``(0028, 0011) Columns``
+    * ``(0018, 0088) SpacingBetweenSlices``, ``(0028, 0030) PixelSpacing``
+    * ``(0055, 1001) Frame Start Times Vector`` (private, vendor: GE / Hermes)
+    * ``(0055, 1002) Frame Positions Vector`` (private)
+    * ``(0055, 1004) Frame Durations Vector`` (private, milliseconds)
+
+    The slice-position vector is the key to reshaping: every unique value is
+    one axial level, and PyDicom's flat slice stack is sorted first by frame
+    then by slice, so reshaping to ``(T, Z, Y, X)`` with ``Z = #unique
+    positions`` is correct after a stable sort within each frame.
+    """
+    raise NotImplementedError
+
+
+def load_mr(path: Path | str) -> MRVolume:
+    """Load the 3-D anatomical MR DICOM.
+
+    Parameters
+    ----------
+    path : Path | str
+        Filesystem path to the (enhanced multi-frame) DICOM file.
+
+    Returns
+    -------
+    MRVolume
+        See :class:`MRVolume`.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``path`` does not exist.
+    """
+    raise NotImplementedError
