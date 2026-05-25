@@ -329,8 +329,30 @@ def load_mr(path: Path | str) -> MRVolume:
     ------
     FileNotFoundError
         If ``path`` does not exist.
+    KeyError
+        If the per-slice rescale tag is missing.
     """
-    raise NotImplementedError
+    p = _require_path(path)
+    ds = pydicom.dcmread(str(p))
+
+    raw = ds.pixel_array
+    rescale = _read_private_array(ds, _TAG_RESCALE_SLOPES)
+    pixel = _apply_rescale_per_slice(raw, rescale)
+
+    voxel_spacing: tuple[float, float, float] = (
+        float(ds.SpacingBetweenSlices),
+        float(ds.PixelSpacing[0]),
+        float(ds.PixelSpacing[1]),
+    )
+
+    affine = _axial_affine(voxel_spacing)
+
+    return MRVolume(
+        pixel_array=pixel,
+        voxel_spacing=voxel_spacing,
+        affine=affine,
+        raw_headers=ds,
+    )
 
 
 def to_sitk_image(
