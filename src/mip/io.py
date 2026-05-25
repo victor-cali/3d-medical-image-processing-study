@@ -374,8 +374,32 @@ def to_sitk_image(
     Returns
     -------
     sitk.Image
-        A 3-D float32 image with the correct origin, spacing, and direction
-        cosines pulled from ``study.affine`` so that registration uses
-        physical coordinates rather than voxel indices.
+        A 3-D float32 image whose origin and spacing match ``study.affine``
+        and ``study.voxel_spacing``, so registration runs in physical
+        coordinates rather than voxel indices.
+
+    Notes
+    -----
+    SimpleITK expects ``(x, y, z)`` axis order, whereas NumPy arrays are
+    indexed ``(z, y, x)``.  ``GetImageFromArray`` handles the axis swap
+    silently, but spacing and origin must be passed in ``(x, y, z)`` order
+    — easy to get wrong, so the conversion is centralised here.
     """
-    raise NotImplementedError
+    if isinstance(study, PETStudy):
+        if frame is None:
+            volume = study.mean_volume
+        else:
+            volume = study.pixel_array[frame]
+    elif isinstance(study, MRVolume):
+        volume = study.pixel_array
+    else:
+        raise TypeError(f"Unsupported study type {type(study).__name__}")
+
+    img = sitk.GetImageFromArray(volume.astype(np.float32))
+    z_mm, y_mm, x_mm = study.voxel_spacing
+    img.SetSpacing((x_mm, y_mm, z_mm))
+    img.SetOrigin(
+        (float(study.affine[0, 3]), float(study.affine[1, 3]), float(study.affine[2, 3]))
+    )
+    # Direction stays identity (axial fallback, PLAN D18).
+    return img
