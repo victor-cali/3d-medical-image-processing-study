@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import pydicom
+import SimpleITK as sitk
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,5 +167,31 @@ def load_mr(path: Path | str) -> MRVolume:
     ------
     FileNotFoundError
         If ``path`` does not exist.
+    """
+    raise NotImplementedError
+
+
+def to_sitk_image(
+    study: PETStudy | MRVolume,
+    *,
+    frame: int | None = None,
+) -> sitk.Image:
+    """Convert a :class:`PETStudy` or :class:`MRVolume` to a ``SimpleITK.Image``.
+
+    Parameters
+    ----------
+    study : PETStudy | MRVolume
+        The dataclass to convert.
+    frame : int | None, default ``None``
+        For a :class:`PETStudy`, the time frame to extract.  If ``None``,
+        the time-averaged volume (:attr:`PETStudy.mean_volume`) is used.
+        Ignored for :class:`MRVolume`.
+
+    Returns
+    -------
+    sitk.Image
+        A 3-D float32 image with the correct origin, spacing, and direction
+        cosines pulled from ``study.affine`` so that registration uses
+        physical coordinates rather than voxel indices.
     """
     raise NotImplementedError
