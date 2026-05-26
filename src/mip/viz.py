@@ -34,6 +34,8 @@ __all__ = [
     "show_last_frame",
     "show_mean_frame",
     "show_three_median_planes",
+    "show_coregistration_panels",
+    "overlay_mask"
 ]
 
 
@@ -258,6 +260,134 @@ def show_three_median_planes(
 
     if title:
         fig.suptitle(title, fontsize=12)
+    return fig
+
+
+def show_coregistration_panels(
+    mr: np.ndarray,
+    pet: np.ndarray,
+    *,
+    axis: int = 0,
+    index: int | None = None,
+    voxel_spacing: tuple[float, float, float] | None = None,
+    alpha: float = 0.5,
+    pet_cmap: str = "hot",
+    title: str | None = None,
+) -> Figure:
+    """Three-panel slice view comparing MR, coregistered PET, and α-fused overlay.
+
+    A single slice ``index`` along ``axis`` is shown in three panels:
+
+    1. **MR** (reference, gray cmap).
+    2. **PET** (coregistered, ``pet_cmap``).  Intensities are robustly
+       windowed via the 1st/99th-percentile of *non-zero* voxels so that
+       background rotation / resampling zeros don't compress the dynamic
+       range.
+    3. **α-fused overlay**: MR (gray) underneath, PET on top with opacity
+       ``alpha``; PET background voxels are masked transparent so the
+       anatomy shows through where there is no tracer signal.
+
+    This is the radiologist-friendly companion to the rotating MIPs:
+    walking through axial slices with the alpha overlay confirms that
+    the registration is anatomically correct slice by slice — the rotating
+    MIP only shows the projected envelope.
+
+    Parameters
+    ----------
+    mr : np.ndarray
+        Reference MR volume of shape ``(Z, Y, X)``.
+    pet : np.ndarray
+        Coregistered PET volume on the MR grid, same shape as ``mr``.
+    axis : int, default 0
+        Slicing axis (0 = axial, 1 = coronal, 2 = sagittal).
+    index : int | None, default ``None``
+        Slice index along ``axis``.  ``None`` picks the median plane.
+    voxel_spacing : tuple[float, float, float] | None
+        ``(z, y, x)`` mm.  When provided, the aspect ratio is corrected
+        for anisotropy on the non-axial planes.
+    alpha : float, default 0.5
+        Opacity of the PET overlay in the third panel.
+    pet_cmap : str, default ``"hot"``
+        Matplotlib colormap for the PET channel.
+    title : str | None
+        Optional figure suptitle.  Defaults to
+        ``"<plane> slice <index> / <Z-1>"``.
+
+    Returns
+    -------
+    Figure
+        A 1x3 matplotlib Figure: MR | PET | α-fused overlay.
+
+    Raises
+    ------
+    ValueError
+        If ``mr`` and ``pet`` have different shapes or ``index`` is
+        outside ``[0, mr.shape[axis])``.
+    """
+    if mr.shape != pet.shape:
+        raise ValueError(f"mr shape {mr.shape} != pet shape {pet.shape}")
+
+    n_along_axis = mr.shape[axis]
+    if index is None:
+        index = n_along_axis // 2
+    if not 0 <= index < n_along_axis:
+        raise ValueError(
+            f"index {index} out of range [0, {n_along_axis}) for axis {axis}"
+        )
+
+    aspect = _aspect_for_plane(axis, voxel_spacing) if voxel_spacing else 1.0
+    mr_slice = _take_slice(mr, axis, index)
+    pet_slice = _take_slice(pet, axis, index)
+
+    # Robust *global* intensity bounds, so the colour scale stays stable
+    # when the caller iterates over slices (e.g. via an ipywidgets slider).
+    mr_vmin, mr_vmax = (float(v) for v in np.percentile(mr, [1, 99]))
+    pet_nonzero = pet[pet > 0]
+    if pet_nonzero.size:
+        pet_vmin = float(np.percentile(pet_nonzero, 1))
+        pet_vmax = float(np.percentile(pet_nonzero, 99))
+    else:
+        pet_vmin, pet_vmax = 0.0, 1.0
+
+    # NaNs render as transparent in imshow — used here so the MR shows
+    # through the third panel wherever the PET is background.
+    pet_overlay = np.where(pet_slice > pet_vmin, pet_slice, np.nan)
+
+    fig, axes = plt.subplots(
+        1, 3, figsize=(13, 4.5), dpi=FIGURE_DPI, constrained_layout=True
+    )
+
+    axes[0].imshow(
+        mr_slice, cmap="gray", vmin=mr_vmin, vmax=mr_vmax,
+        aspect=aspect, interpolation="nearest",
+    )
+    axes[0].set_title("MR (reference)", fontsize=10)
+
+    axes[1].imshow(
+        pet_slice, cmap=pet_cmap, vmin=pet_vmin, vmax=pet_vmax,
+        aspect=aspect, interpolation="nearest",
+    )
+    axes[1].set_title("PET (coregistered)", fontsize=10)
+
+    axes[2].imshow(
+        mr_slice, cmap="gray", vmin=mr_vmin, vmax=mr_vmax,
+        aspect=aspect, interpolation="nearest",
+    )
+    axes[2].imshow(
+        pet_overlay, cmap=pet_cmap, vmin=pet_vmin, vmax=pet_vmax,
+        aspect=aspect, interpolation="nearest", alpha=alpha,
+    )
+    axes[2].set_title(f"α-fused overlay  (α = {alpha:.2f})", fontsize=10)
+
+    for ax in axes:
+        ax.set_axis_off()
+
+    plane_label = ("Axial", "Coronal", "Sagittal")[axis]
+    fig.suptitle(
+        title if title is not None else f"{plane_label} slice {index} / {n_along_axis - 1}",
+        fontsize=12,
+    )
+
     return fig
 
 
