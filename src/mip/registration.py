@@ -31,6 +31,8 @@ from typing import Callable
 import numpy as np
 import SimpleITK as sitk
 
+from .config import RANDOM_SEED
+
 __all__ = ["RegistrationResult", "rigid_coregister"]
 
 
@@ -135,4 +137,85 @@ def rigid_coregister(
     4. ``AddCommand(sitkIterationEvent, ...)`` to capture per-iteration MI.
     5. ``Execute`` then resample with a linear interpolator onto ``fixed``.
     """
-    raise NotImplementedError
+    if len(shrink_factors) != len(smoothing_sigmas):
+        raise ValueError(
+            f"shrink_factors and smoothing_sigmas must have the same length, "
+            f"got {len(shrink_factors)} and {len(smoothing_sigmas)}"
+        )
+
+    seed_value = RANDOM_SEED if seed is None else int(seed)
+
+    # SimpleITK's Mattes MI demands a consistent float type on both inputs.
+    moving_f = sitk.Cast(moving, sitk.sitkFloat32)
+    fixed_f = sitk.Cast(fixed, sitk.sitkFloat32)
+
+    # Geometric-centroid initialization: optimizer starts inside the MI basin.
+    initial_transform = sitk.CenteredTransformInitializer(
+        fixed_f,
+        moving_f,
+        sitk.VersorRigid3DTransform(),
+        sitk.CenteredTransformInitializerFilter.GEOMETRY,
+    )
+
+    method = sitk.ImageRegistrationMethod()
+
+    # --- Similarity metric -------------------------------------------------
+    method.SetMetricAsMattesMutualInformation(
+        numberOfHistogramBins=n_histogram_bins
+    )
+    method.SetMetricSamplingStrategy(method.RANDOM)
+    method.SetMetricSamplingPercentage(sampling_percentage, seed=seed_value)
+    method.SetInterpolator(sitk.sitkLinear)
+
+    # --- Optimizer ---------------------------------------------------------
+    method.SetOptimizerAsRegularStepGradientDescent(
+        learningRate=lr,
+        minStep=min_step,
+        numberOfIterations=n_iterations,
+        relaxationFactor=relaxation_factor,
+        gradientMagnitudeTolerance=1e-8,
+    )
+
+    method.SetOptimizerScalesFromPhysicalShift()
+
+    # --- Multi-resolution pyramid ------------------------------------------
+    method.SetShrinkFactorsPerLevel(shrinkFactors=list(shrink_factors))
+    method.SetSmoothingSigmasPerLevel(smoothingSigmas=list(smoothing_sigmas))
+    method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
+
+    # --- Initial transform (in_place=False so we can read the final one) --
+    method.SetInitialTransform(initial_transform, inPlace=False)
+
+    # --- Per-iteration metric capture --------------------------------------
+    metric_values: list[float] = []
+
+    def _on_iter() -> None:
+        v = float(method.GetMetricValue())
+        metric_values.append(v)
+        if metric_callback is not None:
+            metric_callback(v, method.GetOptimizerIteration())
+
+    method.AddCommand(sitk.sitkIterationEvent, _on_iter)
+
+    # --- Run --------------------------------------------------------------
+    final_transform = method.Execute(fixed_f, moving_f)
+
+    # --- Resample moving onto fixed grid using the optimized transform ----
+    resampled = sitk.Resample(
+        moving_f,
+        fixed_f,
+        final_transform,
+        sitk.sitkLinear,
+        0.0,
+        moving_f.GetPixelID(),
+    )
+    resampled_arr = sitk.GetArrayFromImage(resampled).astype(np.float32)
+
+    return RegistrationResult(
+        transform=final_transform,
+        resampled=resampled_arr,
+        metric_values=metric_values,
+        final_metric=metric_values[-1] if metric_values else float("nan"),
+        n_iterations=method.GetOptimizerIteration(),
+        optimizer_stop_condition=method.GetOptimizerStopConditionDescription(),
+    )
