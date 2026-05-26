@@ -2,7 +2,7 @@
 authors = [{ name = "V. A. Canales Lima", email = "victor-armando.canales1@estudiant.uib.cat" }]
 dependencies = [
     "pydicom>=3.0.2,<4",
-    "numpy>=2.4.6,<3",
+    "numpy>=2.4.4,<3",
     "matplotlib>=3.10.9,<4",
     "scikit-image>=0.26.0,<0.27",
     "simpleitk>=2.5.5,<3",
@@ -22,7 +22,12 @@ requires = ["hatchling"]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
+[tool.pixi.pypi-options]
+extra-index-urls = ["https://download.pytorch.org/whl/cu126"]
+
 [tool.pixi.pypi-dependencies]
+torch = "*"
+torchvision = "*"
 mip = { path = ".", editable = true }
 
 [tool.pixi.tasks]
