@@ -29,7 +29,10 @@ __all__ = [
     "MIP_N_ANGLES",
     "MIP_FPS",
     "FIGURE_DPI",
+    "MEDSAM2_DIR",
     "MEDSAM2_CHECKPOINT",
+    "MEDSAM2_MODEL_CFG",
+    "MEDSAM2_IMAGE_SIZE",
     "DEVICE",
 ]
 
@@ -77,8 +80,31 @@ MIP_FPS: int = 15
 #: notebook responsiveness and LaTeX-figure quality.
 FIGURE_DPI: int = 130
 
-#: HuggingFace model id for MedSAM-2.  Verified during Obj 3 implementation.
-MEDSAM2_CHECKPOINT: str = "wanglab/MedSAM2"
+#: Root of the locally-cloned MedSAM-2 repo.  Default convention: the user
+#: clones ``https://github.com/bowang-lab/MedSAM2.git`` *next to* this
+#: project, i.e. ``<PROJECT_ROOT.parent>/MedSAM2``.  Override the
+#: ``MEDSAM2_DIR`` env var (or this constant) to point somewhere else.
+MEDSAM2_DIR: Path = Path(
+    os.environ.get("MEDSAM2_DIR", PROJECT_ROOT.parent / "MedSAM2")
+)
+
+#: Filesystem path to the MedSAM-2 checkpoint (downloaded by
+#: ``MedSAM2/download.sh`` into ``MedSAM2/checkpoints/``).  ``MedSAM2_latest.pt``
+#: is the variant the upstream inference script (``medsam2_infer_3D_CT.py``)
+#: uses and is what we target here.
+MEDSAM2_CHECKPOINT: Path = MEDSAM2_DIR / "checkpoints" / "MedSAM2_latest.pt"
+
+#: Hydra config name for the SAM-2.1 tiny-512 backbone, the one MedSAM-2 was
+#: fine-tuned against.  ``build_sam2_video_predictor_npz`` accepts either a
+#: relative path within the ``sam2`` package's ``configs/`` directory or a
+#: Hydra-style dotted name; this is the form used in the upstream demo.
+MEDSAM2_MODEL_CFG: str = "configs/sam2.1_hiera_t512.yaml"
+
+#: Spatial size MedSAM-2 was trained on.  Both H and W of every slice are
+#: resized to this before inference, then masks are projected back to the
+#: original MR grid by the predictor (using the ``video_height`` /
+#: ``video_width`` it stored at ``init_state`` time).
+MEDSAM2_IMAGE_SIZE: int = 512
 
 
 def _detect_device() -> str:
